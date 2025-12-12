@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    LOG_DIR = "C:\\tmp\\advisoon-logs"   // Windows path
+    LOG_DIR = "C:\\tmp\\advisoon-logs"
   }
 
   stages {
@@ -12,7 +12,9 @@ pipeline {
           Write-Output '==== INIT ===='
           New-Item -ItemType Directory -Force -Path '${env.LOG_DIR}' | Out-Null
           \$ts = (Get-Date).ToString('yyyyMMddHHmmss')
-          'Init at: ' + (Get-Date) | Out-File -FilePath '${env.LOG_DIR}\\init-' + \$ts + '.log'
+          \$filepath = Join-Path -Path '${env.LOG_DIR}' -ChildPath ('init-' + \$ts + '.log')
+          'Init at: ' + (Get-Date) | Out-File -FilePath \$filepath -Encoding utf8
+          Write-Output ('Wrote init log to: ' + \$filepath)
         """
       }
     }
@@ -21,17 +23,17 @@ pipeline {
       steps {
         powershell """
           Write-Output 'Checking Python availability...'
-          # Try python3 then python
           \$py = (Get-Command python3 -ErrorAction SilentlyContinue).Path
           if (-not \$py) { \$py = (Get-Command python -ErrorAction SilentlyContinue).Path }
           if (-not \$py) {
             Write-Error 'Python not found on agent. Please install python3 or add python to PATH.'
             exit 1
           }
-          Write-Output 'Using: ' + \$py
+          Write-Output ('Using: ' + \$py)
           \$ts = (Get-Date).ToString('yyyyMMddHHmmss')
-          & \$py --version 2>&1 | Out-File -FilePath '${env.LOG_DIR}\\python-version-' + \$ts + '.log'
-          Write-Output 'Python version written to ${env.LOG_DIR}\\python-version-' + \$ts + '.log'
+          \$pyfile = Join-Path -Path '${env.LOG_DIR}' -ChildPath ('python-version-' + \$ts + '.log')
+          & \$py --version 2>&1 | Out-File -FilePath \$pyfile -Encoding utf8
+          Write-Output ('Python version written to ' + \$pyfile)
         """
       }
     }
@@ -45,6 +47,7 @@ pipeline {
           New-Item -ItemType Directory -Force -Path .\\logs | Out-Null
           # Run pytest and store junit xml and stdout log
           python -m pytest -q --junitxml="reports\\junit-\$ts.xml" 2>&1 | Tee-Object -FilePath "logs\\pytest-\$ts.log"
+          Write-Output 'pytest finished; junit and logs saved'
         """
       }
       post {
@@ -59,9 +62,8 @@ pipeline {
         powershell """
           Write-Output 'Verify: quick sample invocation'
           \$ts = (Get-Date).ToString('yyyyMMddHHmmss')
-          # run the scoring function and save output
           python -c "from ad_scoring import score_ad; print(score_ad({'ctr':0.03,'relevance':0.9,'budget_ratio':0.7}))" > logs\\verify-\$ts.txt
-          Write-Output 'Verify output saved to logs\\verify-' + \$ts + '.txt'
+          Write-Output ('Verify output saved to logs\\verify-' + \$ts + '.txt')
         """
       }
     }
@@ -73,7 +75,7 @@ pipeline {
           New-Item -ItemType Directory -Force -Path '${env.LOG_DIR}' | Out-Null
           Copy-Item -Path .\\logs\\* -Destination '${env.LOG_DIR}' -Force -ErrorAction SilentlyContinue
           Copy-Item -Path .\\reports\\* -Destination '${env.LOG_DIR}' -Force -ErrorAction SilentlyContinue
-          Write-Output 'Copied logs and reports to ${env.LOG_DIR}'
+          Write-Output ('Copied logs and reports to ${env.LOG_DIR}')
         """
       }
       post {
